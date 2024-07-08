@@ -108,8 +108,17 @@ def _log_plots(plots, step):
 
 
 def on_pretrain_routine_start(trainer):
-    """Initiate and start project if module is present."""
-    wb.run or wb.init(project=trainer.args.project or "YOLOv8", name=trainer.args.name, config=vars(trainer.args))
+    """Initiate and start or resume project if module is present."""
+    if trainer.args.resume:
+        try:
+            entity = 'jpmaliwa'  # Retrieve entity from the checkpoint or model directory 
+            run_id = 'jqf7slip'  # Retrieve run_id from the checkpoint or model directory # run_id = trainer.args.wandb_run_id
+            wb.init(entity=entity, id=run_id, project=trainer.args.project, resume='must')
+        except Exception as e:
+            print(f"Warning: Could not resume run. {e}")
+            wb.init(project=trainer.args.project or "YOLOv8", name=trainer.args.name, config=vars(trainer.args))
+    else:
+        wb.run or wb.init(project=trainer.args.project or "YOLOv8", name=trainer.args.name, config=vars(trainer.args))
 
 
 def on_fit_epoch_end(trainer):
