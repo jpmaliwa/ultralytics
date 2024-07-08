@@ -1,5 +1,6 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
+import os
 from ultralytics.utils import SETTINGS, TESTS_RUNNING
 from ultralytics.utils.torch_utils import model_info_for_loggers
 
@@ -107,12 +108,20 @@ def _log_plots(plots, step):
             _processed_plots[name] = timestamp
 
 
+# Retrieve the wandb_run_id and wandb_entity from environment variables
+wandb_run_id = os.getenv('WANDB_RUN_ID')
+wandb_entity = os.getenv('WANDB_ENTITY')
+
 def on_pretrain_routine_start(trainer):
     """Initiate and start or resume project if module is present."""
     if trainer.args.resume:
+        if not wandb_run_id:
+            raise ValueError("WANDB_RUN_ID environment variable must be set when resuming a run.")
+        if not wandb_entity:
+            raise ValueError("WANDB_ENTITY environment variable must be set when resuming a run.")
         try:
-            entity = 'jpmaliwa'  # Retrieve entity from the checkpoint or model directory 
-            run_id = 'jqf7slip'  # Retrieve run_id from the checkpoint or model directory # run_id = trainer.args.wandb_run_id
+            entity = wandb_entity  # Retrieve entity from the environment variable
+            run_id = wandb_run_id  # Retrieve run_id from the environment variable
             wb.init(entity=entity, id=run_id, project=trainer.args.project, resume='must')
         except Exception as e:
             print(f"Warning: Could not resume run. {e}")
