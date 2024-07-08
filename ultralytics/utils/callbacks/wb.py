@@ -122,10 +122,22 @@ def on_pretrain_routine_start(trainer):
 
 
 def on_fit_epoch_end(trainer):
-    """Logs training metrics and model information at the end of an epoch."""
+    """Logs training and validation metrics and model information at the end of an epoch, including model checkpoints."""
     wb.run.log(trainer.metrics, step=trainer.epoch + 1)
     _log_plots(trainer.plots, step=trainer.epoch + 1)
     _log_plots(trainer.validator.plots, step=trainer.epoch + 1)
+
+    # Create an artifact and add model files
+    art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
+    if trainer.best.exists():
+        art.add_file(trainer.best, name=f"epoch_{trainer.epoch + 1}_best.pt")
+        
+    if trainer.last.exists():
+        art.add_file(trainer.last, name=f"epoch_{trainer.epoch + 1}_last.pt")
+    
+    # Log the artifact
+    wb.run.log_artifact(art)
+    
     if trainer.epoch == 0:
         wb.run.log(model_info_for_loggers(trainer), step=trainer.epoch + 1)
 
@@ -139,13 +151,21 @@ def on_train_epoch_end(trainer):
 
 
 def on_train_end(trainer):
-    """Save the best model as an artifact at end of training."""
+    """Save the best and last models as artifacts at the end of training."""
     _log_plots(trainer.validator.plots, step=trainer.epoch + 1)
     _log_plots(trainer.plots, step=trainer.epoch + 1)
+
+    # Create an artifact and add model files
     art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
     if trainer.best.exists():
-        art.add_file(trainer.best)
-        wb.run.log_artifact(art, aliases=["best"])
+        art.add_file(trainer.best, name="best.pt")
+
+    if trainer.last.exists():
+        art.add_file(trainer.last, name="last.pt")
+    
+    # Log the artifact
+    wb.run.log_artifact(art)
+    
     for curve_name, curve_values in zip(trainer.validator.metrics.curves, trainer.validator.metrics.curves_results):
         x, y, x_title, y_title = curve_values
         _plot_curve(
@@ -158,6 +178,7 @@ def on_train_end(trainer):
             y_title=y_title,
         )
     wb.run.finish()  # required or run continues on dashboard
+
 
 
 callbacks = (
