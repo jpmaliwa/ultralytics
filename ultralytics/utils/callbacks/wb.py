@@ -1,5 +1,6 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
+import os
 from ultralytics.utils import SETTINGS, TESTS_RUNNING
 from ultralytics.utils.torch_utils import model_info_for_loggers
 
@@ -107,16 +108,45 @@ def _log_plots(plots, step):
             _processed_plots[name] = timestamp
 
 
+# Retrieve the wandb_run_id and wandb_entity from environment variables
+wandb_run_id = os.getenv('WANDB_RUN_ID')
+wandb_entity = os.getenv('WANDB_ENTITY')
+
 def on_pretrain_routine_start(trainer):
-    """Initiate and start project if module is present."""
-    wb.run or wb.init(project=trainer.args.project or "YOLOv8", name=trainer.args.name, config=vars(trainer.args))
+    """Initiate and start or resume project if module is present."""
+    if trainer.args.resume:
+        if not wandb_run_id:
+            raise ValueError("WANDB_RUN_ID environment variable must be set when resuming a run.")
+        if not wandb_entity:
+            raise ValueError("WANDB_ENTITY environment variable must be set when resuming a run.")
+        try:
+            entity = wandb_entity  # Retrieve entity from the environment variable
+            run_id = wandb_run_id  # Retrieve run_id from the environment variable
+            wb.init(entity=entity, id=run_id, project=trainer.args.project, resume='must')
+        except Exception as e:
+            print(f"Warning: Could not resume run. {e}")
+            wb.init(project=trainer.args.project or "YOLOv8", name=trainer.args.name, config=vars(trainer.args))
+    else:
+        wb.run or wb.init(project=trainer.args.project or "YOLOv8", name=trainer.args.name, config=vars(trainer.args))
 
 
 def on_fit_epoch_end(trainer):
-    """Logs training metrics and model information at the end of an epoch."""
+    """Logs training and validation metrics and model information at the end of an epoch, including model checkpoints."""
     wb.run.log(trainer.metrics, step=trainer.epoch + 1)
     _log_plots(trainer.plots, step=trainer.epoch + 1)
     _log_plots(trainer.validator.plots, step=trainer.epoch + 1)
+
+    # Create an artifact and add model files
+    art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
+    if trainer.best.exists():
+        art.add_file(trainer.best, name=f"epoch_{trainer.epoch + 1}_best.pt")
+        
+    if trainer.last.exists():
+        art.add_file(trainer.last, name=f"epoch_{trainer.epoch + 1}_last.pt")
+    
+    # Log the artifact
+    wb.run.log_artifact(art)
+    
     if trainer.epoch == 0:
         wb.run.log(model_info_for_loggers(trainer), step=trainer.epoch + 1)
 
@@ -130,13 +160,21 @@ def on_train_epoch_end(trainer):
 
 
 def on_train_end(trainer):
-    """Save the best model as an artifact at end of training."""
+    """Save the best and last models as artifacts at the end of training."""
     _log_plots(trainer.validator.plots, step=trainer.epoch + 1)
     _log_plots(trainer.plots, step=trainer.epoch + 1)
+
+    # Create an artifact and add model files
     art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
     if trainer.best.exists():
-        art.add_file(trainer.best)
-        wb.run.log_artifact(art, aliases=["best"])
+        art.add_file(trainer.best, name="best.pt")
+
+    if trainer.last.exists():
+        art.add_file(trainer.last, name="last.pt")
+    
+    # Log the artifact
+    wb.run.log_artifact(art)
+    
     for curve_name, curve_values in zip(trainer.validator.metrics.curves, trainer.validator.metrics.curves_results):
         x, y, x_title, y_title = curve_values
         _plot_curve(
@@ -149,6 +187,7 @@ def on_train_end(trainer):
             y_title=y_title,
         )
     wb.run.finish()  # required or run continues on dashboard
+
 
 
 callbacks = (
